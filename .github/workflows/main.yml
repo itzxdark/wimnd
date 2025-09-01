@@ -1,0 +1,131 @@
+name: Hackex
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *'  # Auto restart every 6 hours
+
+jobs:
+  build:
+    name: Start Building...
+    runs-on: windows-latest
+    timeout-minutes: 350  # Increased time limit
+    
+    steps:
+      - name: Direct Avica Setup
+        run: |
+          Write-Host "🚀 Starting Avica setup directly..." -ForegroundColor Green
+          
+          # Create setup.py directly instead of downloading
+          Write-Host "Creating setup.py..." -ForegroundColor Cyan
+          $setupPyContent = @"
+import requests
+import os
+import pyautogui
+import time
+import subprocess
+
+def upload_image(file_path):
+    \"""
+    Upload a file to File.io and return the download link.
+    The file is deleted after one download or after the specified expiration (7 days).
+    \"""
+    if not os.path.exists(file_path):
+        Write-Host "Error: File $file_path does not exist" -ForegroundColor Red
+        return $null
+    
+    $url = "https://file.io"
+    try {
+        $response = Invoke-RestMethod -Uri $url -Method Post -InFile $file_path -Form @{ file = Get-Item $file_path } -Body @{ expires = '7d' }
+        if ($response.success) {
+            Write-Host "File uploaded successfully! Download link: $($response.link)" -ForegroundColor Green
+            return $response.link
+        } else {
+            Write-Host "Failed to upload file: $($response.error)" -ForegroundColor Red
+            return $null
+        }
+    } catch {
+        Write-Host "Error during file upload: $_" -ForegroundColor Red
+        return $null
+    }
+
+# Capture screenshot (e.g., Avica ID and password)
+Write-Host "Capturing screenshot..." -ForegroundColor Cyan
+Start-Sleep -Seconds 5  # Wait for Avica to start
+$pyautogui = python -c "import pyautogui; pyautogui.screenshot().save('screenshot.png')"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Failed to capture screenshot" -ForegroundColor Red
+    exit 1
+}
+
+# Upload screenshot to File.io
+$link = upload_image('screenshot.png')
+if ($null -eq $link) {
+    Write-Host "Upload failed, exiting..." -ForegroundColor Red
+    exit 1
+}
+
+# Run Avica with quoted path to avoid 'C:\Program' error
+$avicaPath = "C:\Program Files\Avica\Avica.exe"
+if (Test-Path $avicaPath) {
+    Start-Process -FilePath "`"$avicaPath`"" -NoNewWindow
+} else {
+    Write-Host "Avica executable not found at $avicaPath" -ForegroundColor Red
+}
+"@
+          Set-Content -Path "setup.py" -Value $setupPyContent
+          
+          # Download other files
+          Invoke-WebRequest -Uri "https://download.avica.com/AvicaLite_v8.0.8.9.exe" -OutFile "Avica_setup.exe"
+          Invoke-WebRequest -Uri "https://gitlab.com/userup908/my-rdp/-/raw/main/show.bat" -OutFile "show.bat"
+          Invoke-WebRequest -Uri "https://gitlab.com/userup908/my-rdp/-/raw/main/loop.bat" -OutFile "loop.bat"
+          
+          # Install Python packages
+          python.exe -m pip install requests pyautogui telegraph --quiet
+          
+          # Enable RDP
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          
+          # Set user password
+          net user runneradmin TheDisa1a
+          
+          # Start Avica
+          Write-Host "⚡ Starting Avica..." -ForegroundColor Yellow
+          python -c "import pyautogui as pag; pag.click(897, 64, duration=2)" 2>$null
+          Start-Process "Avica_setup.exe"
+          
+          # Run setup script
+          python setup.py
+          
+          Write-Host "✅ Setup completed! Check for File.io link!" -ForegroundColor Green
+          
+      - name: Setup System User
+        run: |
+          net user runneradmin TheDisa1a
+          Write-Host "✅ System user configured" -ForegroundColor Green
+          
+      - name: Show Connection Info
+        run: |
+          Write-Host "
+          ╔══════════════════════════════════════╗
+          ║        AVICA RDP CONNECTION          ║  
+          ╚══════════════════════════════════════╝
+          
+          👨‍💻 Created by dark
+          
+          📋 Instructions:
+          • Go to the File.io link that will appear below
+          • Get Avica ID and Password from there
+          • Download Avica app and connect
+          • File.io link is deleted after one download!
+          
+          ⏳ Waiting for File.io link...
+          " -ForegroundColor Cyan
+          
+      - name: Start Avica Service
+        run: cmd /c show.bat
+        
+      - name: Keep Session Active
+        run: |
+          Write-Host "🚀 Avica is starting... Look for CONNECTION ID below!" -ForegroundColor Yellow
+          cmd /c loop.bat

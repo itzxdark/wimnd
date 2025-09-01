@@ -17,7 +17,7 @@ jobs:
           
           # Create setup.py directly instead of downloading
           Write-Host "Creating setup.py..." -ForegroundColor Cyan
-          $setupPyContent = @"
+          $setupPyContent = @'
 import requests
 import os
 import pyautogui
@@ -25,53 +25,51 @@ import time
 import subprocess
 
 def upload_image(file_path):
-    \"""
+    """
     Upload a file to File.io and return the download link.
     The file is deleted after one download or after the specified expiration (7 days).
-    \"""
+    """
     if not os.path.exists(file_path):
-        Write-Host "Error: File $file_path does not exist" -ForegroundColor Red
-        return $null
+        print(f"Error: File {file_path} does not exist")
+        return None
     
-    $url = "https://file.io"
-    try {
-        $response = Invoke-RestMethod -Uri $url -Method Post -InFile $file_path -Form @{ file = Get-Item $file_path } -Body @{ expires = '7d' }
-        if ($response.success) {
-            Write-Host "File uploaded successfully! Download link: $($response.link)" -ForegroundColor Green
-            return $response.link
-        } else {
-            Write-Host "Failed to upload file: $($response.error)" -ForegroundColor Red
-            return $null
-        }
-    } catch {
-        Write-Host "Error during file upload: $_" -ForegroundColor Red
-        return $null
-    }
+    url = "https://file.io"
+    try:
+        with open(file_path, 'rb') as f:
+            response = requests.post(url, files={'file': f}, params={'expires': '7d'})
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('success'):
+                print(f"File uploaded successfully! Download link: {data.get('link')}")
+                return data.get('link')
+            else:
+                print(f"Failed to upload file: {data.get('error', 'Unknown error')}")
+                return None
+        else:
+            print(f"Failed to upload file: {response.status_code} {response.reason}")
+            return None
+    except Exception as e:
+        print(f"Error during file upload: {str(e)}")
+        return None
 
 # Capture screenshot (e.g., Avica ID and password)
-Write-Host "Capturing screenshot..." -ForegroundColor Cyan
-Start-Sleep -Seconds 5  # Wait for Avica to start
-$pyautogui = python -c "import pyautogui; pyautogui.screenshot().save('screenshot.png')"
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Failed to capture screenshot" -ForegroundColor Red
-    exit 1
-}
+print("Capturing screenshot...")
+time.sleep(5)  # Wait for Avica to start
+pyautogui.screenshot().save('screenshot.png')
 
 # Upload screenshot to File.io
-$link = upload_image('screenshot.png')
-if ($null -eq $link) {
-    Write-Host "Upload failed, exiting..." -ForegroundColor Red
-    exit 1
-}
+link = upload_image('screenshot.png')
+if link is None:
+    print("Upload failed, exiting...")
+    exit(1)
 
 # Run Avica with quoted path to avoid 'C:\Program' error
-$avicaPath = "C:\Program Files\Avica\Avica.exe"
-if (Test-Path $avicaPath) {
-    Start-Process -FilePath "`"$avicaPath`"" -NoNewWindow
-} else {
-    Write-Host "Avica executable not found at $avicaPath" -ForegroundColor Red
-}
-"@
+avica_path = "C:\\Program Files\\Avica\\Avica.exe"
+if os.path.exists(avica_path):
+    subprocess.run([avica_path], shell=True)
+else:
+    print(f"Avica executable not found at {avica_path}")
+'@
           Set-Content -Path "setup.py" -Value $setupPyContent
           
           # Download other files
